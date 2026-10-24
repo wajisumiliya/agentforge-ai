@@ -43,6 +43,9 @@ if(db) {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`);
 }
+if(db && process.env.AGENTFORGE_SINGLE_INSTANCE==='true') {
+  await db.query("UPDATE agentforge_tasks SET status='Failed',error='Interrupted by server restart',updated_at=now() WHERE status='Running'");
+}
 async function save(t) {
   if(!db){memory.set(t.id,t);return;}
   await db.query(`INSERT INTO agentforge_tasks (id,task,status,result,trace,error) VALUES ($1,$2,$3,$4,$5,$6)
