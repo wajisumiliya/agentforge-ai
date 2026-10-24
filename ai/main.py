@@ -1,7 +1,9 @@
 import os
+import json
 from typing import TypedDict
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, START, END
 
@@ -66,3 +68,19 @@ async def run(task: Task):
         return {"result": state["result"], "trace": state["trace"]}
     except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(status_code=503, detail="Local Ollama request failed. Check Ollama and the configured model.") from exc
+
+
+@app.post("/run-stream")
+async def run_stream(task: Task):
+    async def events():
+        state = {"task": task.task, "plan": "", "research": "", "draft": "", "result": "", "trace": []}
+        try:
+            async for update in graph.astream(state, stream_mode="updates"):
+                for node, values in update.items():
+                    if isinstance(values, dict):
+                        state.update(values)
+                        yield json.dumps({"type": "progress", "agent": node.title(), "trace": state["trace"]}) + "\n"
+            yield json.dumps({"type": "complete", "result": state["result"], "trace": state["trace"]}) + "\\n"
+        except Exception:
+            yield json.dumps({"type": "error", "error": "Local AI execution failed. Check Ollama and model availability."}) + "\\n"
+    return StreamingResponse(events(), media_type="application/x-ndjson")
