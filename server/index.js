@@ -81,6 +81,11 @@ app.post('/api/tasks/:id/approve',wrap(async(req,res)=>{
     if(!response.ok)throw new Error('AI service returned '+response.status);
     const data=await response.json();t.result=data.result;t.trace=data.trace;t.status='Completed';
   }catch(e){t.status='Failed';t.error=e.message;}
-  try{await save(t)}finally{running.delete(t.id)}res.json(t);
+  try{
+    if(db){
+      await db.query("UPDATE agentforge_tasks SET status=$2,result=$3,trace=$4,error=$5,updated_at=now() WHERE id=$1 AND status='Running'",[t.id,t.status,t.result||null,JSON.stringify(t.trace||[]),t.error||null]);
+    }else{await save(t)}
+  }finally{running.delete(t.id)}
+  res.json(t);
 }));
 app.listen(Number(process.env.PORT)||3001,'127.0.0.1',()=>console.log('AgentForge API listening on localhost'));
