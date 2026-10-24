@@ -50,6 +50,7 @@ async function save(t) {
   [t.id,t.task,t.status,t.result||null,JSON.stringify(t.trace||[]),t.error||null]);
 }
 async function get(id) {
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))return undefined;
   if(!db)return memory.get(id);
   const r=await db.query('SELECT * FROM agentforge_tasks WHERE id=$1',[id]);return r.rows[0];
 }
