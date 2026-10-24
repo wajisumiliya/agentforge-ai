@@ -11,12 +11,22 @@ app.use(express.json({limit: '16kb'}));
 const db = process.env.DATABASE_URL ? new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.PGSSL==='true'?{rejectUnauthorized:true}:undefined}) : null;
 const memory = new Map();
 const running = new Set();
+const failures = new Map();
 const apiKey = process.env.AGENTFORGE_API_KEY;
 if(!apiKey || apiKey.length < 32) throw new Error('Set AGENTFORGE_API_KEY to a random value of at least 32 characters');
 app.use('/api', (req,res,next)=>{
+ const ip=req.ip||'local';
+ const record=failures.get(ip);
+ if(record && record.until>Date.now())return res.status(429).json({error:'Too many invalid authentication attempts'});
  const received=req.get('X-AgentForge-Key')||'';
  const a=Buffer.from(received), b=Buffer.from(apiKey);
- if(a.length!==b.length || !timingSafeEqual(a,b))return res.status(401).json({error:'Unauthorized'});
+ if(a.length!==b.length || !timingSafeEqual(a,b)){
+   const current=failures.get(ip);
+   const count=(current?.count||0)+1;
+   failures.set(ip,{count,until:count>=10?Date.now()+60000:0});
+   return res.status(401).json({error:'Unauthorized'});
+ }
+ failures.delete(ip);
  next();
 });
 
