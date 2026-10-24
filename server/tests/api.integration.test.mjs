@@ -34,11 +34,12 @@ test('API authentication, queue and reject lifecycle',async()=>{
 test('approved task executes against mocked AI and cannot execute twice',async()=>{
  const key='integration-test-secret-key-at-least-32-characters';
  const mock=createServer(async(req,res)=>{
-  if(req.method!=='POST'||req.url!=='/run'){res.writeHead(404).end();return;}
+  if(req.method!=='POST'||req.url!=='/run-stream'){res.writeHead(404).end();return;}
   let body='';for await(const chunk of req)body+=chunk;
   assert.equal(JSON.parse(body).task,'Test approved workflow');
   res.setHeader('Content-Type','application/json');
-  res.end(JSON.stringify({result:'Reviewed plan',trace:[{agent:'Planner',output:'Plan ready'},{agent:'Reviewer',output:'Reviewed plan'}]}));
+  const trace=[{agent:'Planner',output:'Plan ready'},{agent:'Reviewer',output:'Reviewed plan'}];
+  res.end([JSON.stringify({type:'progress',agent:'Planner',trace:trace.slice(0,1)}),JSON.stringify({type:'progress',agent:'Reviewer',trace}),JSON.stringify({type:'complete',result:'Reviewed plan',trace})].join(String.fromCharCode(10))+String.fromCharCode(10));
  });
  await new Promise(resolve=>mock.listen(0,'127.0.0.1',resolve));
  const aiPort=mock.address().port;
