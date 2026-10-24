@@ -16,3 +16,6 @@ Optional `DATABASE_URL` configures PostgreSQL; otherwise tasks are in Node proce
 
 ## Limitations
 Four sequential LangGraph agents generate textual results, no real web research or code execution. Approval is an API action, not role-based authorization. The browser keeps the API key in sessionStorage. This is **not** production-grade authentication: no user identities, sessions, or authorization. Do not expose the Node API or Ollama publicly. Node binds to localhost. Public deployment requires proper authentication, rate limits, HTTPS, CSRF/security review, and secure hosting for inference.
+
+## Reliability notes (v0.7)
+The local API throttles ten invalid key attempts per one-minute window and limits in-process concurrent AI approvals to two. These protections are not distributed across servers. PostgreSQL task claims are atomic, but global concurrency across multiple API instances is not enforced. Task status refresh uses polling rather than streaming. Do not expose the service to the internet until a production authentication and deployment review is completed.
