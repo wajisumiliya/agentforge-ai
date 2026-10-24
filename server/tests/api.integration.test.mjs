@@ -24,6 +24,7 @@ test('API authentication, queue and reject lifecycle',async()=>{
   const list=await fetch(base+'/tasks',{headers});assert.ok((await list.json()).tasks.some(x=>x.id===task.id));
   const rejected=await fetch(base+'/tasks/'+task.id+'/reject',{method:'POST',headers});assert.equal(rejected.status,200);assert.equal((await rejected.json()).status,'Rejected');
   const repeated=await fetch(base+'/tasks/'+task.id+'/reject',{method:'POST',headers});assert.equal(repeated.status,409);
+  const invalidId=await fetch(base+'/tasks/not-a-uuid/reject',{method:'POST',headers});assert.equal(invalidId.status,404);
   for(let i=0;i<9;i++){const attempt=await fetch(base+'/tasks');assert.equal(attempt.status,401)}
   const limited=await fetch(base+'/tasks');assert.equal(limited.status,429);
   const blocked=await fetch(base+'/tasks',{headers});assert.equal(blocked.status,429);
