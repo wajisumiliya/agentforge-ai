@@ -15,6 +15,7 @@ const failures = new Map();
 const authWindowMs = 60000;
 const maxFailures = 10;
 const maxConcurrentTasks = 2;
+const maxPendingTasks = 100;
 const apiKey = process.env.AGENTFORGE_API_KEY;
 if(!apiKey || apiKey.length < 32) throw new Error('Set AGENTFORGE_API_KEY to a random value of at least 32 characters');
 app.use('/api', (req,res,next)=>{
@@ -60,6 +61,10 @@ function wrap(fn){return (req,res)=>Promise.resolve(fn(req,res)).catch(e=>{conso
 app.get('/api/health',(_,res)=>res.json({status:'ok',persistence:db?'postgresql':'memory'}));
 app.get('/api/tasks',wrap(async(_,res)=>res.json({tasks:await list()})));
 app.post('/api/tasks',wrap(async(req,res)=>{
+  const pending=db
+    ? Number((await db.query("SELECT count(*)::int AS n FROM agentforge_tasks WHERE status='Pending approval'")).rows[0].n)
+    : [...memory.values()].filter(t=>t.status==='Pending approval').length;
+  if(pending>=maxPendingTasks)return res.status(429).json({error:'Pending task queue is full'});
   const task=req.body?.task;
   if(typeof task!=='string'||!task.trim()||task.length>4000)return res.status(400).json({error:'Task must be 1–4000 characters'});
   const t={id:randomUUID(),task:task.trim(),status:'Pending approval',trace:[]};
@@ -96,7 +101,9 @@ app.post('/api/tasks/:id/approve',wrap(async(req,res)=>{
       body:JSON.stringify({task:t.task}),signal:AbortSignal.timeout(480000)
     });
     if(!response.ok)throw new Error('AI service returned '+response.status);
-    const data=await response.json();t.result=data.result;t.trace=data.trace;t.status='Completed';
+    const data=await response.json();
+    if(typeof data.result!=='string'||!Array.isArray(data.trace))throw new Error('Invalid AI response');
+    t.result=data.result;t.trace=data.trace;t.status='Completed';
   }catch(e){t.status='Failed';t.error=e.message;}
   try{
     if(db){
