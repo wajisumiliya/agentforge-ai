@@ -89,19 +89,47 @@ app.post('/api/tasks/:id/reject',wrap(async(req,res)=>{
 }));
 async function executeApprovedTask(t){
   try{
-    const response=await fetch((process.env.AI_SERVICE_URL||'http://127.0.0.1:8000')+'/run',{
+    const response=await fetch((process.env.AI_SERVICE_URL||'http://127.0.0.1:8000')+'/run-stream',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({task:t.task}),signal:AbortSignal.timeout(480000)
     });
-    if(!response.ok)throw new Error('AI service returned '+response.status);
-    const data=await response.json();
-    if(typeof data.result!=='string'||!Array.isArray(data.trace))throw new Error('Invalid AI response');
-    t.result=data.result;t.trace=data.trace;t.status='Completed';
+    if(!response.ok||!response.body)throw new Error('AI service returned '+response.status);
+    const reader=response.body.getReader();
+    const decoder=new TextDecoder();
+    let buffer='';
+    let completed=false;
+    async function consume(line){
+      if(!line.trim())return;
+      const event=JSON.parse(line);
+      if(event.type==='error')throw new Error(event.error||'AI execution failed');
+      if(event.type==='progress' && Array.isArray(event.trace)){
+        t.trace=event.trace;
+        if(db)await db.query("UPDATE agentforge_tasks SET trace=$2,updated_at=now() WHERE id=$1 AND status='Running'",[t.id,JSON.stringify(t.trace)]);
+        else await save(t);
+      }
+      if(event.type==='complete'){
+        if(typeof event.result!=='string'||!Array.isArray(event.trace))throw new Error('Invalid AI response');
+        t.result=event.result;t.trace=event.trace;completed=true;
+      }
+    }
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      buffer+=decoder.decode(value,{stream:true});
+      let index;
+      while((index=buffer.indexOf(String.fromCharCode(10)))>=0){
+        const line=buffer.slice(0,index);buffer=buffer.slice(index+1);
+        await consume(line);
+      }
+    }
+    buffer+=decoder.decode();
+    if(buffer.trim())await consume(buffer);
+    if(!completed)throw new Error('AI stream ended without completion');
+    t.status='Completed';
   }catch(e){t.status='Failed';t.error=e instanceof Error?e.message:'Unknown AI error'}
   try{
-    if(db){
-      await db.query("UPDATE agentforge_tasks SET status=$2,result=$3,trace=$4,error=$5,updated_at=now() WHERE id=$1 AND status='Running'",[t.id,t.status,t.result||null,JSON.stringify(t.trace||[]),t.error||null]);
-    }else{await save(t)}
+    if(db)await db.query("UPDATE agentforge_tasks SET status=$2,result=$3,trace=$4,error=$5,updated_at=now() WHERE id=$1 AND status='Running'",[t.id,t.status,t.result||null,JSON.stringify(t.trace||[]),t.error||null]);
+    else await save(t);
   }catch(e){console.error('Unable to persist task outcome',e)}
   finally{running.delete(t.id)}
 }
