@@ -19,3 +19,6 @@ Four sequential LangGraph agents generate textual results, no real web research 
 
 ## Reliability notes (v0.7)
 The local API throttles ten invalid key attempts per one-minute window and limits in-process concurrent AI approvals to two. These protections are not distributed across servers. PostgreSQL task claims are atomic, but global concurrency across multiple API instances is not enforced. Task status refresh uses polling rather than streaming. Do not expose the service to the internet until a production authentication and deployment review is completed.
+
+## Interrupted tasks
+When using PostgreSQL with exactly one Node API instance, set `AGENTFORGE_SINGLE_INSTANCE=true` to mark previously Running tasks Failed on startup. Do not enable this with multiple API instances: one instance could incorrectly mark another instance's active tasks as failed. In-memory tasks are lost when the process restarts. Approved requests return HTTP 202 and continue asynchronously within the Node process; this is not a durable worker queue.
