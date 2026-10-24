@@ -54,8 +54,16 @@ test('approved task executes against mocked AI and cannot execute twice',async()
   assert.equal(created.status,201);
   const task=await created.json();
   const approved=await fetch(base+'/tasks/'+task.id+'/approve',{method:'POST',headers});
-  assert.equal(approved.status,200);
-  const output=await approved.json();
+  assert.equal(approved.status,202);
+  const accepted=await approved.json();
+  assert.equal(accepted.status,'Running');
+  let output;
+  for(let i=0;i<50;i++){
+    const response=await fetch(base+'/tasks',{headers});
+    output=(await response.json()).tasks.find(x=>x.id===task.id);
+    if(output?.status==='Completed')break;
+    await delay(100);
+  }
   assert.equal(output.status,'Completed');assert.equal(output.result,'Reviewed plan');assert.equal(output.trace.length,2);
   const again=await fetch(base+'/tasks/'+task.id+'/approve',{method:'POST',headers});
   assert.equal(again.status,409);
