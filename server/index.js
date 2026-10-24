@@ -12,18 +12,22 @@ const db = process.env.DATABASE_URL ? new pg.Pool({connectionString:process.env.
 const memory = new Map();
 const running = new Set();
 const failures = new Map();
+const authWindowMs = 60000;
+const maxFailures = 10;
 const apiKey = process.env.AGENTFORGE_API_KEY;
 if(!apiKey || apiKey.length < 32) throw new Error('Set AGENTFORGE_API_KEY to a random value of at least 32 characters');
 app.use('/api', (req,res,next)=>{
  const ip=req.ip||'local';
+ const now=Date.now();
  const record=failures.get(ip);
- if(record && record.until>Date.now())return res.status(429).json({error:'Too many invalid authentication attempts'});
+ if(record && now-record.started>=authWindowMs)failures.delete(ip);
+ else if(record && record.count>=maxFailures)return res.status(429).json({error:'Too many invalid authentication attempts'});
  const received=req.get('X-AgentForge-Key')||'';
  const a=Buffer.from(received), b=Buffer.from(apiKey);
  if(a.length!==b.length || !timingSafeEqual(a,b)){
    const current=failures.get(ip);
-   const count=(current?.until && current.until<=Date.now()?0:current?.count||0)+1;
-   failures.set(ip,{count,until:count>=10?Date.now()+60000:0});
+   const count=(current && now-current.started<authWindowMs?current.count:0)+1;
+   failures.set(ip,{count,started:current && now-current.started<authWindowMs?current.started:now});
    return res.status(401).json({error:'Unauthorized'});
  }
  failures.delete(ip);
