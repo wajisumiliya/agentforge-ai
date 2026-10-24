@@ -1,7 +1,7 @@
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import {randomUUID} from 'node:crypto';
+import {randomUUID, timingSafeEqual} from 'node:crypto';
 import pg from 'pg';
 
 const app = express();
@@ -10,6 +10,15 @@ app.use(cors({origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173'}));
 app.use(express.json({limit: '16kb'}));
 const db = process.env.DATABASE_URL ? new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.PGSSL==='true'?{rejectUnauthorized:true}:undefined}) : null;
 const memory = new Map();
+const apiKey = process.env.AGENTFORGE_API_KEY;
+if(!apiKey || apiKey.length < 32) throw new Error('Set AGENTFORGE_API_KEY to a random value of at least 32 characters');
+app.use('/api', (req,res,next)=>{
+ const received=req.get('X-AgentForge-Key')||'';
+ const a=Buffer.from(received), b=Buffer.from(apiKey);
+ if(a.length!==b.length || !timingSafeEqual(a,b))return res.status(401).json({error:'Unauthorized'});
+ next();
+});
+
 if(db) {
   await db.query(`CREATE TABLE IF NOT EXISTS agentforge_tasks (
     id UUID PRIMARY KEY, task TEXT NOT NULL, status TEXT NOT NULL,
@@ -48,7 +57,11 @@ app.post('/api/tasks/:id/reject',wrap(async(req,res)=>{
 app.post('/api/tasks/:id/approve',wrap(async(req,res)=>{
   const t=await get(req.params.id);if(!t)return res.status(404).json({error:'Not found'});
   if(t.status!=='Pending approval')return res.status(409).json({error:'Task is not pending'});
-  t.status='Running';await save(t);
+  if(db){
+    const claim=await db.query("UPDATE agentforge_tasks SET status='Running',updated_at=now() WHERE id=$1 AND status='Pending approval' RETURNING id",[t.id]);
+    if(!claim.rowCount)return res.status(409).json({error:'Task already claimed'});
+  }else{t.status='Running';await save(t);}
+  t.status='Running';
   try{
     const response=await fetch((process.env.AI_SERVICE_URL||'http://127.0.0.1:8000')+'/run',{
       method:'POST',headers:{'Content-Type':'application/json'},
