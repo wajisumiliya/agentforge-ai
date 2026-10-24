@@ -1,5 +1,62 @@
-import express from 'express';import helmet from 'helmet';import cors from 'cors';
-const app=express();app.use(helmet());app.use(cors({origin:process.env.CLIENT_ORIGIN||'http://localhost:5173'}));app.use(express.json({limit:'16kb'}));
-app.get('/api/health',(_,res)=>res.json({status:'ok'}));
-app.post('/api/tasks',async(req,res)=>{const task=req.body?.task;if(typeof task!=='string'||!task.trim()||task.length>4000)return res.status(400).json({error:'Task must be 1–4000 characters'});try{const response=await fetch((process.env.AI_SERVICE_URL||'http://127.0.0.1:8000')+'/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task}),signal:AbortSignal.timeout(120000)});const data=await response.json();if(!response.ok)return res.status(502).json({error:'AI service error'});res.json(data)}catch{res.status(503).json({error:'Local AI service unavailable'})}});
-app.listen(process.env.PORT||3001,()=>console.log('AgentForge API listening'));
+import express from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
+import {randomUUID} from 'node:crypto';
+import pg from 'pg';
+
+const app = express();
+app.use(helmet());
+app.use(cors({origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173'}));
+app.use(express.json({limit: '16kb'}));
+const db = process.env.DATABASE_URL ? new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.PGSSL==='true'?{rejectUnauthorized:true}:undefined}) : null;
+const memory = new Map();
+if(db) {
+  await db.query(`CREATE TABLE IF NOT EXISTS agentforge_tasks (
+    id UUID PRIMARY KEY, task TEXT NOT NULL, status TEXT NOT NULL,
+    result TEXT, trace JSONB, error TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`);
+}
+async function save(t) {
+  if(!db){memory.set(t.id,t);return;}
+  await db.query(`INSERT INTO agentforge_tasks (id,task,status,result,trace,error) VALUES ($1,$2,$3,$4,$5,$6)
+  ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,result=EXCLUDED.result,trace=EXCLUDED.trace,error=EXCLUDED.error,updated_at=now()`,
+  [t.id,t.task,t.status,t.result||null,JSON.stringify(t.trace||[]),t.error||null]);
+}
+async function get(id) {
+  if(!db)return memory.get(id);
+  const r=await db.query('SELECT * FROM agentforge_tasks WHERE id=$1',[id]);return r.rows[0];
+}
+async function list() {
+  if(!db)return [...memory.values()].reverse().slice(0,100);
+  const r=await db.query('SELECT * FROM agentforge_tasks ORDER BY created_at DESC LIMIT 100');return r.rows;
+}
+function wrap(fn){return (req,res)=>Promise.resolve(fn(req,res)).catch(e=>{console.error(e);res.status(500).json({error:'Internal server error'});});}
+app.get('/api/health',(_,res)=>res.json({status:'ok',persistence:db?'postgresql':'memory'}));
+app.get('/api/tasks',wrap(async(_,res)=>res.json({tasks:await list()})));
+app.post('/api/tasks',wrap(async(req,res)=>{
+  const task=req.body?.task;
+  if(typeof task!=='string'||!task.trim()||task.length>4000)return res.status(400).json({error:'Task must be 1–4000 characters'});
+  const t={id:randomUUID(),task:task.trim(),status:'Pending approval',trace:[]};
+  await save(t);res.status(201).json(t);
+}));
+app.post('/api/tasks/:id/reject',wrap(async(req,res)=>{
+  const t=await get(req.params.id);if(!t)return res.status(404).json({error:'Not found'});
+  if(t.status!=='Pending approval')return res.status(409).json({error:'Task is not pending'});
+  t.status='Rejected';await save(t);res.json(t);
+}));
+app.post('/api/tasks/:id/approve',wrap(async(req,res)=>{
+  const t=await get(req.params.id);if(!t)return res.status(404).json({error:'Not found'});
+  if(t.status!=='Pending approval')return res.status(409).json({error:'Task is not pending'});
+  t.status='Running';await save(t);
+  try{
+    const response=await fetch((process.env.AI_SERVICE_URL||'http://127.0.0.1:8000')+'/run',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({task:t.task}),signal:AbortSignal.timeout(480000)
+    });
+    if(!response.ok)throw new Error('AI service returned '+response.status);
+    const data=await response.json();t.result=data.result;t.trace=data.trace;t.status='Completed';
+  }catch(e){t.status='Failed';t.error=e.message;}
+  await save(t);res.json(t);
+}));
+app.listen(Number(process.env.PORT)||3001,'127.0.0.1',()=>console.log('AgentForge API listening on localhost'));
