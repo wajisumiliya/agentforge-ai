@@ -14,6 +14,7 @@ const running = new Set();
 const failures = new Map();
 const authWindowMs = 60000;
 const maxFailures = 10;
+const maxConcurrentTasks = 2;
 const apiKey = process.env.AGENTFORGE_API_KEY;
 if(!apiKey || apiKey.length < 32) throw new Error('Set AGENTFORGE_API_KEY to a random value of at least 32 characters');
 app.use('/api', (req,res,next)=>{
@@ -79,6 +80,7 @@ app.post('/api/tasks/:id/reject',wrap(async(req,res)=>{
 app.post('/api/tasks/:id/approve',wrap(async(req,res)=>{
   const t=await get(req.params.id);if(!t)return res.status(404).json({error:'Not found'});
   if(t.status!=='Pending approval')return res.status(409).json({error:'Task is not pending'});
+  if(running.size>=maxConcurrentTasks)return res.status(429).json({error:'Local AI concurrency limit reached'});
   if(db){
     const claim=await db.query("UPDATE agentforge_tasks SET status='Running',updated_at=now() WHERE id=$1 AND status='Pending approval' RETURNING id",[t.id]);
     if(!claim.rowCount)return res.status(409).json({error:'Task already claimed'});
@@ -86,6 +88,7 @@ app.post('/api/tasks/:id/approve',wrap(async(req,res)=>{
     if(running.has(t.id))return res.status(409).json({error:'Task already claimed'});
     running.add(t.id);t.status='Running';await save(t);
   }
+  running.add(t.id);
   t.status='Running';
   try{
     const response=await fetch((process.env.AI_SERVICE_URL||'http://127.0.0.1:8000')+'/run',{
