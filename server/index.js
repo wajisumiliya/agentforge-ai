@@ -83,6 +83,25 @@ app.post('/api/tasks/:id/reject',wrap(async(req,res)=>{
   }
   t.status='Rejected';res.json(t);
 }));
+async function executeApprovedTask(t){
+  try{
+    const response=await fetch((process.env.AI_SERVICE_URL||'http://127.0.0.1:8000')+'/run',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({task:t.task}),signal:AbortSignal.timeout(480000)
+    });
+    if(!response.ok)throw new Error('AI service returned '+response.status);
+    const data=await response.json();
+    if(typeof data.result!=='string'||!Array.isArray(data.trace))throw new Error('Invalid AI response');
+    t.result=data.result;t.trace=data.trace;t.status='Completed';
+  }catch(e){t.status='Failed';t.error=e instanceof Error?e.message:'Unknown AI error'}
+  try{
+    if(db){
+      await db.query("UPDATE agentforge_tasks SET status=$2,result=$3,trace=$4,error=$5,updated_at=now() WHERE id=$1 AND status='Running'",[t.id,t.status,t.result||null,JSON.stringify(t.trace||[]),t.error||null]);
+    }else{await save(t)}
+  }catch(e){console.error('Unable to persist task outcome',e)}
+  finally{running.delete(t.id)}
+}
+
 app.post('/api/tasks/:id/approve',wrap(async(req,res)=>{
   const t=await get(req.params.id);if(!t)return res.status(404).json({error:'Not found'});
   if(t.status!=='Pending approval')return res.status(409).json({error:'Task is not pending'});
@@ -96,21 +115,8 @@ app.post('/api/tasks/:id/approve',wrap(async(req,res)=>{
   }
   running.add(t.id);
   t.status='Running';
-  try{
-    const response=await fetch((process.env.AI_SERVICE_URL||'http://127.0.0.1:8000')+'/run',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({task:t.task}),signal:AbortSignal.timeout(480000)
-    });
-    if(!response.ok)throw new Error('AI service returned '+response.status);
-    const data=await response.json();
-    if(typeof data.result!=='string'||!Array.isArray(data.trace))throw new Error('Invalid AI response');
-    t.result=data.result;t.trace=data.trace;t.status='Completed';
-  }catch(e){t.status='Failed';t.error=e.message;}
-  try{
-    if(db){
-      await db.query("UPDATE agentforge_tasks SET status=$2,result=$3,trace=$4,error=$5,updated_at=now() WHERE id=$1 AND status='Running'",[t.id,t.status,t.result||null,JSON.stringify(t.trace||[]),t.error||null]);
-    }else{await save(t)}
-  }finally{running.delete(t.id)}
-  res.json(t);
+  res.status(202).json(t);
+  void executeApprovedTask(t);
+
 }));
 app.listen(Number(process.env.PORT)||3001,'127.0.0.1',()=>console.log('AgentForge API listening on localhost'));
