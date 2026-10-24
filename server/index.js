@@ -16,6 +16,7 @@ const authWindowMs = 60000;
 const maxFailures = 10;
 const maxConcurrentTasks = 2;
 const maxPendingTasks = 100;
+const taskIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const apiKey = process.env.AGENTFORGE_API_KEY;
 if(!apiKey || apiKey.length < 32) throw new Error('Set AGENTFORGE_API_KEY to a random value of at least 32 characters');
 app.use('/api', (req,res,next)=>{
@@ -53,7 +54,7 @@ async function save(t) {
   [t.id,t.task,t.status,t.result||null,JSON.stringify(t.trace||[]),t.error||null]);
 }
 async function get(id) {
-  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))return undefined;
+  if(!taskIdPattern.test(id))return undefined;
   if(!db)return memory.get(id);
   const r=await db.query('SELECT * FROM agentforge_tasks WHERE id=$1',[id]);return r.rows[0];
 }
