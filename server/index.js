@@ -22,7 +22,7 @@ app.use('/api', (req,res,next)=>{
  const a=Buffer.from(received), b=Buffer.from(apiKey);
  if(a.length!==b.length || !timingSafeEqual(a,b)){
    const current=failures.get(ip);
-   const count=(current?.count||0)+1;
+   const count=(current?.until && current.until<=Date.now()?0:current?.count||0)+1;
    failures.set(ip,{count,until:count>=10?Date.now()+60000:0});
    return res.status(401).json({error:'Unauthorized'});
  }
