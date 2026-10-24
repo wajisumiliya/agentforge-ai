@@ -79,8 +79,8 @@ async def run_stream(task: Task):
                 for node, values in update.items():
                     if isinstance(values, dict):
                         state.update(values)
-                        yield json.dumps({"type": "progress", "agent": node.title(), "trace": state["trace"]}) + "\n"
-            yield json.dumps({"type": "complete", "result": state["result"], "trace": state["trace"]}) + "\\n"
+                        yield json.dumps({"type": "progress", "agent": node.title(), "trace": state["trace"]}) + chr(10)
+            yield json.dumps({"type": "complete", "result": state["result"], "trace": state["trace"]}) + chr(10)
         except Exception:
-            yield json.dumps({"type": "error", "error": "Local AI execution failed. Check Ollama and model availability."}) + "\\n"
+            yield json.dumps({"type": "error", "error": "Local AI execution failed. Check Ollama and model availability."}) + chr(10)
     return StreamingResponse(events(), media_type="application/x-ndjson")
