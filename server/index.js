@@ -1,0 +1,5 @@
+import express from 'express';import helmet from 'helmet';import cors from 'cors';
+const app=express();app.use(helmet());app.use(cors({origin:process.env.CLIENT_ORIGIN||'http://localhost:5173'}));app.use(express.json({limit:'16kb'}));
+app.get('/api/health',(_,res)=>res.json({status:'ok'}));
+app.post('/api/tasks',async(req,res)=>{const task=req.body?.task;if(typeof task!=='string'||!task.trim()||task.length>4000)return res.status(400).json({error:'Task must be 1–4000 characters'});try{const response=await fetch((process.env.AI_SERVICE_URL||'http://127.0.0.1:8000')+'/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task}),signal:AbortSignal.timeout(120000)});const data=await response.json();if(!response.ok)return res.status(502).json({error:'AI service error'});res.json(data)}catch{res.status(503).json({error:'Local AI service unavailable'})}});
+app.listen(process.env.PORT||3001,()=>console.log('AgentForge API listening'));
