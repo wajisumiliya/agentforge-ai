@@ -15,6 +15,8 @@ test('API authentication, queue and reject lifecycle',async()=>{
   for(let i=0;i<40;i++){if(child.exitCode!==null)break;try{const r=await fetch(base+'/health',{headers:{'X-AgentForge-Key':key}});if(r.ok){ready=true;break}}catch{}await delay(150)}
   assert.ok(ready,'server should start');
   const unauth=await fetch(base+'/tasks');assert.equal(unauth.status,401);
+
+  await delay(1);
   const bad=await fetch(base+'/tasks',{method:'POST',headers:{'X-AgentForge-Key':key,'Content-Type':'application/json'},body:JSON.stringify({task:''})});assert.equal(bad.status,400);
   const headers={'X-AgentForge-Key':key,'Content-Type':'application/json'};
   const created=await fetch(base+'/tasks',{method:'POST',headers,body:JSON.stringify({task:'Write a project plan'})});assert.equal(created.status,201);
@@ -22,6 +24,9 @@ test('API authentication, queue and reject lifecycle',async()=>{
   const list=await fetch(base+'/tasks',{headers});assert.ok((await list.json()).tasks.some(x=>x.id===task.id));
   const rejected=await fetch(base+'/tasks/'+task.id+'/reject',{method:'POST',headers});assert.equal(rejected.status,200);assert.equal((await rejected.json()).status,'Rejected');
   const repeated=await fetch(base+'/tasks/'+task.id+'/reject',{method:'POST',headers});assert.equal(repeated.status,409);
+  for(let i=0;i<9;i++){const attempt=await fetch(base+'/tasks');assert.equal(attempt.status,401)}
+  const limited=await fetch(base+'/tasks');assert.equal(limited.status,429);
+  const blocked=await fetch(base+'/tasks',{headers});assert.equal(blocked.status,429);
  }finally{child.kill();await delay(100)}
 });
 
