@@ -10,6 +10,7 @@ app.use(cors({origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173'}));
 app.use(express.json({limit: '16kb'}));
 const db = process.env.DATABASE_URL ? new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.PGSSL==='true'?{rejectUnauthorized:true}:undefined}) : null;
 const memory = new Map();
+const running = new Set();
 const apiKey = process.env.AGENTFORGE_API_KEY;
 if(!apiKey || apiKey.length < 32) throw new Error('Set AGENTFORGE_API_KEY to a random value of at least 32 characters');
 app.use('/api', (req,res,next)=>{
@@ -52,7 +53,14 @@ app.post('/api/tasks',wrap(async(req,res)=>{
 app.post('/api/tasks/:id/reject',wrap(async(req,res)=>{
   const t=await get(req.params.id);if(!t)return res.status(404).json({error:'Not found'});
   if(t.status!=='Pending approval')return res.status(409).json({error:'Task is not pending'});
-  t.status='Rejected';await save(t);res.json(t);
+  if(db){
+    const changed=await db.query("UPDATE agentforge_tasks SET status='Rejected',updated_at=now() WHERE id=$1 AND status='Pending approval' RETURNING id",[t.id]);
+    if(!changed.rowCount)return res.status(409).json({error:'Task already claimed'});
+  }else{
+    if(running.has(t.id))return res.status(409).json({error:'Task already claimed'});
+    t.status='Rejected';await save(t);
+  }
+  t.status='Rejected';res.json(t);
 }));
 app.post('/api/tasks/:id/approve',wrap(async(req,res)=>{
   const t=await get(req.params.id);if(!t)return res.status(404).json({error:'Not found'});
@@ -60,7 +68,10 @@ app.post('/api/tasks/:id/approve',wrap(async(req,res)=>{
   if(db){
     const claim=await db.query("UPDATE agentforge_tasks SET status='Running',updated_at=now() WHERE id=$1 AND status='Pending approval' RETURNING id",[t.id]);
     if(!claim.rowCount)return res.status(409).json({error:'Task already claimed'});
-  }else{t.status='Running';await save(t);}
+  }else{
+    if(running.has(t.id))return res.status(409).json({error:'Task already claimed'});
+    running.add(t.id);t.status='Running';await save(t);
+  }
   t.status='Running';
   try{
     const response=await fetch((process.env.AI_SERVICE_URL||'http://127.0.0.1:8000')+'/run',{
@@ -70,6 +81,6 @@ app.post('/api/tasks/:id/approve',wrap(async(req,res)=>{
     if(!response.ok)throw new Error('AI service returned '+response.status);
     const data=await response.json();t.result=data.result;t.trace=data.trace;t.status='Completed';
   }catch(e){t.status='Failed';t.error=e.message;}
-  await save(t);res.json(t);
+  try{await save(t)}finally{running.delete(t.id)}res.json(t);
 }));
 app.listen(Number(process.env.PORT)||3001,'127.0.0.1',()=>console.log('AgentForge API listening on localhost'));
