@@ -41,7 +41,7 @@ test('approved task executes against mocked AI and cannot execute twice',async()
   const trace=[{agent:'Planner',output:'Plan ready'},{agent:'Researcher',output:'Research ready'},{agent:'Developer',output:'Draft ready'},{agent:'Reviewer',output:'Reviewed plan'}];
   res.write(JSON.stringify({type:'progress',agent:'Planner',trace:trace.slice(0,1)})+String.fromCharCode(10));
   await delay(300);
-  res.end([JSON.stringify({type:'progress',agent:'Reviewer',trace}),JSON.stringify({type:'complete',result:'Reviewed plan',trace})].join(String.fromCharCode(10))+String.fromCharCode(10));
+  res.end([JSON.stringify({type:'progress',agent:'Researcher',trace:trace.slice(0,2)}),JSON.stringify({type:'progress',agent:'Developer',trace:trace.slice(0,3)}),JSON.stringify({type:'progress',agent:'Reviewer',trace}),JSON.stringify({type:'complete',result:'Reviewed plan',trace})].join(String.fromCharCode(10))+String.fromCharCode(10));
  });
  await new Promise(resolve=>mock.listen(0,'127.0.0.1',resolve));
  const aiPort=mock.address().port;
