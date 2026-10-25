@@ -25,6 +25,40 @@ class StreamTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[0]["type"], "error")
         self.assertNotIn("RuntimeError", events[0]["error"])
 
+    async def test_ollama_health_ready(self):
+        response = MagicMock()
+        response.json.return_value = {"models": [{"name": "qwen2.5:3b"}]}
+        client = AsyncMock()
+        client.get.return_value = response
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=client)
+        context.__aexit__ = AsyncMock(return_value=False)
+        with patch.object(main.httpx, "AsyncClient", return_value=context):
+            result = await main.ollama_health()
+        self.assertEqual(result, {"status": "ready", "model": "qwen2.5:3b"})
+
+    async def test_ollama_health_missing_model(self):
+        response = MagicMock()
+        response.json.return_value = {"models": [{"name": "other:latest"}]}
+        client = AsyncMock()
+        client.get.return_value = response
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=client)
+        context.__aexit__ = AsyncMock(return_value=False)
+        with patch.object(main.httpx, "AsyncClient", return_value=context):
+            result = await main.ollama_health()
+        self.assertEqual(result["status"], "model_missing")
+
+    async def test_ollama_health_unavailable(self):
+        client = AsyncMock()
+        client.get.side_effect = main.httpx.ConnectError("offline")
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=client)
+        context.__aexit__ = AsyncMock(return_value=False)
+        with patch.object(main.httpx, "AsyncClient", return_value=context):
+            result = await main.ollama_health()
+        self.assertEqual(result["status"], "unavailable")
+
     async def test_empty_ollama_response_is_rejected(self):
         mock_response = MagicMock()
         mock_response.json.return_value = {"response": "  "}
