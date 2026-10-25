@@ -17,7 +17,7 @@ Optional `DATABASE_URL` configures PostgreSQL; otherwise tasks are in Node proce
 ## Limitations
 Four sequential LangGraph agents generate textual results, no real web research or code execution. Approval is an API action, not role-based authorization. The browser keeps the API key in sessionStorage. This is **not** production-grade authentication: no user identities, sessions, or authorization. Do not expose the Node API or Ollama publicly. Node binds to localhost. Public deployment requires proper authentication, rate limits, HTTPS, CSRF/security review, and secure hosting for inference.
 
-## Reliability notes (v0.7)
+## Reliability notes (v1.0 MVP)
 The local API throttles ten invalid key attempts per one-minute window and limits in-process concurrent AI approvals to two. These protections are not distributed across servers. PostgreSQL task claims are atomic, but global concurrency across multiple API instances is not enforced. Task status refresh uses polling rather than streaming. Do not expose the service to the internet until a production authentication and deployment review is completed.
 
 ## Interrupted tasks
@@ -63,3 +63,13 @@ Pop-Location
 ```
 
 Do not expose these development endpoints to the public internet.
+
+## Verification checklist before deployment
+
+1. Open the GitHub Actions page for the latest `main` commit and confirm **both** `frontend` and `python` jobs completed successfully. A commit being present on GitHub is not evidence that CI passed.
+2. Run the local Node integration tests and Python unit tests using the commands above. The integration suite uses a mock AI server; it does **not** verify that Ollama is installed or responsive.
+3. Run the Windows smoke test against a real Ollama model and verify four ordered progress events followed by a complete event.
+4. In the dashboard, queue and approve a task. Confirm that its status progresses from Pending approval to Running to Completed, and that the final answer and all four traces are visible.
+5. Restart the Node API and verify the expected persistence behavior: memory mode loses tasks; PostgreSQL retains them. A running task is not automatically resumed.
+
+AgentForge currently drafts plans, research-style analysis and code suggestions; it does **not** execute generated code, browse the web, modify repositories or deploy applications. Keep it bound to localhost until authentication and infrastructure are production hardened.
