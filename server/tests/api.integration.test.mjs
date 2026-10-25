@@ -155,7 +155,7 @@ test('multiple valid progress events in one large chunk are accepted',async()=>{
   const lines=[];
   for(const agent of ['Planner','Researcher','Developer','Reviewer']){
    trace.push({agent,output:'x'.repeat(280000)});
-   lines.push(JSON.stringify({type:'progress',agent,trace:trace.slice(-1)}));
+   lines.push(JSON.stringify({type:'progress',agent,trace:trace.slice()}));
   }
   lines.push(JSON.stringify({type:'complete',result:'Done',trace:[{agent:'Planner',output:'Plan'},{agent:'Researcher',output:'Research'},{agent:'Developer',output:'Draft'},{agent:'Reviewer',output:'Done'}]}));
   res.end(lines.join(String.fromCharCode(10))+String.fromCharCode(10));
