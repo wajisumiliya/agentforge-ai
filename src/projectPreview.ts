@@ -7,6 +7,10 @@ export function extractProject(text:string):GeneratedFile[]{
   const name=hint.includes('html')?'index.html':hint.includes('css')?'styles.css':hint.includes('javascript')||hint==='js'?'script.js':'';
   if(name&&!files.some(f=>f.name===name))files.push({name,content:match[2].trim()});
  }
+ if(!files.some(f=>f.name==='index.html')){
+  const start=text.search(/<!doctype html|<html[\\s>]/i);
+  if(start>=0){const tail=text.slice(start);const end=tail.search(/<\\/html\\s*>/i);if(end>=0)files.unshift({name:'index.html',content:tail.slice(0,end+tail.slice(end).indexOf('>')+1)});}
+ }
  return files;
 }
 export function previewHtml(files:GeneratedFile[]):string|null{
