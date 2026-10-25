@@ -307,6 +307,27 @@ test('trailing event after completion fails and clears provisional result',async
  }
 });
 
+test('task creation validates and persists AI execution mode',async()=>{
+ const key='integration-test-secret-key-at-least-32-characters';
+ const port=48000+Math.floor(Math.random()*1000);
+ const child=spawn(process.execPath,['index.js'],{cwd:fileURLToPath(new URL('../',import.meta.url)),env:{...process.env,AGENTFORGE_API_KEY:key,PORT:String(port),DATABASE_URL:''},stdio:'ignore'});
+ const base='http://127.0.0.1:'+port+'/api';
+ const headers={'X-AgentForge-Key':key,'Content-Type':'application/json'};
+ try{
+  let ready=false;
+  for(let i=0;i<40;i++){if(child.exitCode!==null)break;try{if((await fetch(base+'/health',{headers})).ok){ready=true;break}}catch{}await delay(150)}
+  assert.ok(ready,'API server should start');
+  const bad=await fetch(base+'/tasks',{method:'POST',headers,body:JSON.stringify({task:'Test',mode:'unknown'})});
+  assert.equal(bad.status,400);
+  const good=await fetch(base+'/tasks',{method:'POST',headers,body:JSON.stringify({task:'Test hybrid',mode:'hybrid'})});
+  assert.equal(good.status,201);
+  const task=await good.json();
+  assert.equal(task.mode,'hybrid');
+  const listed=(await (await fetch(base+'/tasks',{headers})).json()).tasks;
+  assert.equal(listed.find(t=>t.id===task.id).mode,'hybrid');
+ }finally{child.kill()}
+});
+
 test('mismatched progress agent name fails validation',async()=>{
  const key='integration-test-secret-key-at-least-32-characters';
  const mock=createServer(async(req,res)=>{
