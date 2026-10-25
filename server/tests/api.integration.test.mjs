@@ -15,6 +15,9 @@ test('API authentication, queue and reject lifecycle',async()=>{
   for(let i=0;i<40;i++){if(child.exitCode!==null)break;try{const r=await fetch(base+'/health',{headers:{'X-AgentForge-Key':key}});if(r.ok){ready=true;break}}catch{}await delay(150)}
   assert.ok(ready,'server should start');
   const unauth=await fetch(base+'/tasks');assert.equal(unauth.status,401);
+  const aiHealth=await fetch(base+'/ai-health',{headers:{'X-AgentForge-Key':key}});
+  assert.equal(aiHealth.status,503,'missing local AI service must report unavailable');
+  assert.equal((await aiHealth.json()).status,'unavailable');
 
   await delay(1);
   const bad=await fetch(base+'/tasks',{method:'POST',headers:{'X-AgentForge-Key':key,'Content-Type':'application/json'},body:JSON.stringify({task:''})});assert.equal(bad.status,400);
