@@ -1,7 +1,7 @@
 import asyncio
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock, MagicMock
 import main
 
 class StreamTest(unittest.IsolatedAsyncioTestCase):
@@ -24,6 +24,17 @@ class StreamTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["type"], "error")
         self.assertNotIn("RuntimeError", events[0]["error"])
+
+    async def test_empty_ollama_response_is_rejected(self):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"response": "  "}
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_client
+        with patch.object(main.httpx, "AsyncClient", return_value=mock_context):
+            with self.assertRaises(ValueError):
+                await main.ask("Planner", "Create a plan")
 
 if __name__ == "__main__":
     unittest.main()
