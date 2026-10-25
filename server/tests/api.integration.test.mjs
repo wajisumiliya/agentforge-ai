@@ -46,6 +46,7 @@ test('approved task executes against mocked AI and cannot execute twice',async()
   if(req.method!=='POST'||req.url!=='/run-stream'){res.writeHead(404).end();return;}
   let body='';for await(const chunk of req)body+=chunk;
   assert.equal(JSON.parse(body).task,'Test approved workflow');
+  assert.equal(JSON.parse(body).mode,'hybrid');
   res.setHeader('Content-Type','application/x-ndjson');
   const trace=[{agent:'Planner',output:'Plan ready'},{agent:'Researcher',output:'Research ready'},{agent:'Developer',output:'Draft ready'},{agent:'Reviewer',output:'Reviewed plan'}];
   res.write(JSON.stringify({type:'progress',agent:'Planner',trace:trace.slice(0,1)})+String.fromCharCode(10));
@@ -71,9 +72,10 @@ test('approved task executes against mocked AI and cannot execute twice',async()
   const provider=await fetch(base+'/provider-health',{headers});
   assert.equal(provider.status,200);
   assert.deepEqual(await provider.json(),{cloud:'configured',model:'test-model'});
-  const created=await fetch(base+'/tasks',{method:'POST',headers,body:JSON.stringify({task:'Test approved workflow'})});
+  const created=await fetch(base+'/tasks',{method:'POST',headers,body:JSON.stringify({task:'Test approved workflow',mode:'hybrid'})});
   assert.equal(created.status,201);
   const task=await created.json();
+  assert.equal(task.mode,'hybrid');
   const approved=await fetch(base+'/tasks/'+task.id+'/approve',{method:'POST',headers});
   assert.equal(approved.status,202);
   const accepted=await approved.json();
