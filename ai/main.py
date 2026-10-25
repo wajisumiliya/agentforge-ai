@@ -1,6 +1,7 @@
 import os
 import json
-from typing import TypedDict
+from typing import TypedDict, Literal
+from contextvars import ContextVar
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -11,6 +12,7 @@ app = FastAPI(title="AgentForge Multi-Agent AI")
 
 class Task(BaseModel):
     task: str = Field(min_length=1, max_length=4000)
+    mode: Literal['offline', 'online', 'hybrid'] = 'offline'
 
 class AgentState(TypedDict):
     task: str
@@ -20,7 +22,33 @@ class AgentState(TypedDict):
     result: str
     trace: list[dict[str, str]]
 
+mode_context: ContextVar[str] = ContextVar('agentforge_mode', default='offline')
+
+async def cloud_ask(role: str, instruction: str) -> str:
+    key = os.getenv('CLOUD_AI_API_KEY', '')
+    if not key:
+        raise ValueError('Cloud AI is not configured')
+    base = os.getenv('CLOUD_AI_BASE_URL', 'https://api.openai.com/v1').rstrip('/')
+    model = os.getenv('CLOUD_AI_MODEL', 'gpt-4o-mini')
+    async with httpx.AsyncClient(timeout=110) as client:
+        response = await client.post(f'{base}/chat/completions', headers={'Authorization': f'Bearer {key}'}, json={'model': model, 'messages': [{'role': 'system', 'content': role}, {'role': 'user', 'content': instruction}], 'max_tokens': 500})
+        response.raise_for_status()
+        data = response.json()
+        answer = data['choices'][0]['message']['content']
+        if not isinstance(answer, str) or not answer.strip():
+            raise ValueError('Cloud AI returned an empty response')
+        return answer.strip()
+
 async def ask(role: str, instruction: str) -> str:
+    mode = mode_context.get()
+    if mode == 'online':
+        return await cloud_ask(role, instruction)
+    if mode == 'hybrid' and os.getenv('CLOUD_AI_API_KEY'):
+        try:
+            return await cloud_ask(role, instruction)
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
+            pass  # Cloud unavailable: try local inference; no automatic cloud retry.
+
     url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
     model = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
     async with httpx.AsyncClient(timeout=110) as client:
@@ -81,17 +109,21 @@ async def ollama_health():
 
 @app.post("/run")
 async def run(task: Task):
+    token = mode_context.set(task.mode)
     try:
         state = await graph.ainvoke({"task": task.task, "plan": "", "research": "", "draft": "", "result": "", "trace": []})
         return {"result": state["result"], "trace": state["trace"]}
-    except (httpx.HTTPError, ValueError) as exc:
-        raise HTTPException(status_code=503, detail="Local Ollama request failed. Check Ollama and the configured model.") from exc
+    except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
+        raise HTTPException(status_code=503, detail="AI provider request failed. Check the selected provider configuration.") from exc
+    finally:
+        mode_context.reset(token)
 
 
 @app.post("/run-stream")
 async def run_stream(task: Task):
     async def events():
         state = {"task": task.task, "plan": "", "research": "", "draft": "", "result": "", "trace": []}
+        token = mode_context.set(task.mode)
         try:
             async for update in graph.astream(state, stream_mode="updates"):
                 for node, values in update.items():
@@ -100,5 +132,7 @@ async def run_stream(task: Task):
                         yield json.dumps({"type": "progress", "agent": node.title(), "trace": state["trace"]}) + chr(10)
             yield json.dumps({"type": "complete", "result": state["result"], "trace": state["trace"]}) + chr(10)
         except Exception:
-            yield json.dumps({"type": "error", "error": "Local AI execution failed. Check Ollama and model availability."}) + chr(10)
+            yield json.dumps({"type": "error", "error": "AI execution failed. Check the selected provider and model."}) + chr(10)
+        finally:
+            mode_context.reset(token)
     return StreamingResponse(events(), media_type="application/x-ndjson")
