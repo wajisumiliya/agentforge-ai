@@ -92,6 +92,15 @@ graph = builder.compile()
 def health():
     return {"status": "ok", "agents": ["Planner", "Researcher", "Developer", "Reviewer"]}
 
+@app.get("/provider-health")
+def provider_health():
+    configured = bool(os.getenv("CLOUD_AI_API_KEY"))
+    return {
+        "cloud": "configured" if configured else "not_configured",
+        "model": os.getenv("CLOUD_AI_MODEL", "gpt-4o-mini") if configured else None,
+        "modes": ["offline", "online", "hybrid"],
+    }
+
 @app.get("/ollama-health")
 async def ollama_health():
     url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
