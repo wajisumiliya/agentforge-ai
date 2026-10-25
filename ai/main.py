@@ -29,7 +29,10 @@ async def ask(role: str, instruction: str) -> str:
             "stream": False, "options": {"num_predict": 500}
         })
         response.raise_for_status()
-        return response.json().get("response", "").strip()
+        answer = response.json().get("response", "")
+        if not isinstance(answer, str) or not answer.strip():
+            raise ValueError("Ollama returned an empty response")
+        return answer.strip()
 
 async def planner(state: AgentState):
     answer = await ask("You are a planning agent. Create a concise actionable plan. Do not claim external research or actions.", state["task"])
