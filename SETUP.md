@@ -47,6 +47,14 @@ Invoke-WebRequest -Uri http://127.0.0.1:8000/run-stream -Method Post -ContentTyp
 
 Expected: four progress events (Planner, Researcher, Developer, Reviewer), followed by one complete event. Then use the browser to connect with the same Node API key, queue a task, approve it, and observe the progress bar. On a CPU-only machine, inference can be slow. If Ollama is unavailable, the task should show Failed instead of Completed.
 
+For a complete Windows build and automated verification, run this command from the repository root after pulling the latest main branch:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\\build-check.ps1
+```
+
+This checks React/TypeScript compilation, Node syntax, Node API integration tests, Python compilation, and Python unit tests. It requires Node.js, npm, Python and internet access to install packages. It does not start Ollama or validate a real model response. GitHub Actions also runs this script on a Windows runner.
+
 To run automated tests locally:
 
 ```powershell
