@@ -12,6 +12,7 @@ const db = process.env.DATABASE_URL ? new pg.Pool({connectionString:process.env.
 const memory = new Map();
 const running = new Set();
 const failures = new Map();
+const maxTrackedIps = 10000;
 const authWindowMs = 60000;
 const maxFailures = 10;
 const maxConcurrentTasks = 2;
@@ -22,6 +23,12 @@ if(!apiKey || apiKey.length < 32) throw new Error('Set AGENTFORGE_API_KEY to a r
 app.use('/api', (req,res,next)=>{
  const ip=req.ip||'local';
  const now=Date.now();
+ if(failures.size>=maxTrackedIps){
+   for(const [address,entry] of failures){
+     if(now-entry.started>=authWindowMs)failures.delete(address);
+   }
+   if(failures.size>=maxTrackedIps)failures.delete(failures.keys().next().value);
+ }
  const record=failures.get(ip);
  if(record && now-record.started>=authWindowMs)failures.delete(ip);
  else if(record && record.count>=maxFailures)return res.status(429).json({error:'Too many invalid authentication attempts'});
