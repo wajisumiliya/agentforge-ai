@@ -17,6 +17,7 @@ const authWindowMs = 60000;
 const maxFailures = 10;
 const maxConcurrentTasks = 2;
 const maxPendingTasks = 100;
+const maxStreamLineBytes = 1024 * 1024;
 const taskIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const apiKey = process.env.AGENTFORGE_API_KEY;
 if(!apiKey || apiKey.length < 32) throw new Error('Set AGENTFORGE_API_KEY to a random value of at least 32 characters');
@@ -107,7 +108,9 @@ async function executeApprovedTask(t){
     let completed=false;
     async function consume(line){
       if(!line.trim())return;
+      if(Buffer.byteLength(line,'utf8')>maxStreamLineBytes)throw new Error('AI progress event too large');
       const event=JSON.parse(line);
+      if(completed)throw new Error('Unexpected AI event after completion');
       if(event.type==='error')throw new Error(event.error||'AI execution failed');
       if(event.type==='progress' && Array.isArray(event.trace)){
         t.trace=event.trace;
@@ -123,6 +126,7 @@ async function executeApprovedTask(t){
       const {done,value}=await reader.read();
       if(done)break;
       buffer+=decoder.decode(value,{stream:true});
+      if(Buffer.byteLength(buffer,'utf8')>maxStreamLineBytes)throw new Error('AI progress event too large');
       let index;
       while((index=buffer.indexOf(String.fromCharCode(10)))>=0){
         const line=buffer.slice(0,index);buffer=buffer.slice(index+1);
