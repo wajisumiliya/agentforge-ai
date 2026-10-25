@@ -13,7 +13,9 @@ function Require-Command([string]$name) {
 function Run-Step([string]$label, [scriptblock]$action) {
     Write-Host ""
     Write-Host "=== $label ===" -ForegroundColor Cyan
+    $global:LASTEXITCODE = 0
     & $action
+    if (-not $?) { throw "$label failed to execute" }
     if ($LASTEXITCODE -ne 0) { throw "$label failed with exit code $LASTEXITCODE" }
 }
 Require-Command node
