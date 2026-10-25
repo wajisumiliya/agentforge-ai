@@ -17,6 +17,7 @@ const authWindowMs = 60000;
 const maxFailures = 10;
 const maxConcurrentTasks = 2;
 const maxPendingTasks = 100;
+const maxMemoryTasks = 1000;
 const maxStreamLineBytes = 1024 * 1024;
 const agentSequence = ['Planner','Researcher','Developer','Reviewer'];
 const taskIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -57,7 +58,16 @@ if(db && process.env.AGENTFORGE_SINGLE_INSTANCE==='true') {
   await db.query("UPDATE agentforge_tasks SET status='Failed',error='Interrupted by server restart',updated_at=now() WHERE status='Running'");
 }
 async function save(t) {
-  if(!db){memory.set(t.id,t);return;}
+  if(!db){
+    memory.set(t.id,t);
+    if(memory.size>maxMemoryTasks){
+      for(const [id,entry] of memory){
+        if(memory.size<=maxMemoryTasks)break;
+        if(entry.status==='Completed'||entry.status==='Failed'||entry.status==='Rejected')memory.delete(id);
+      }
+    }
+    return;
+  }
   await db.query(`INSERT INTO agentforge_tasks (id,task,status,result,trace,error) VALUES ($1,$2,$3,$4,$5,$6)
   ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,result=EXCLUDED.result,trace=EXCLUDED.trace,error=EXCLUDED.error,updated_at=now()`,
   [t.id,t.task,t.status,t.result||null,JSON.stringify(t.trace||[]),t.error||null]);
