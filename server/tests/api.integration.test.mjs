@@ -37,6 +37,7 @@ test('API authentication, queue and reject lifecycle',async()=>{
 test('approved task executes against mocked AI and cannot execute twice',async()=>{
  const key='integration-test-secret-key-at-least-32-characters';
  const mock=createServer(async(req,res)=>{
+  if(req.method==='GET'&&req.url==='/health'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({status:'ok',agents:['Planner','Researcher','Developer','Reviewer']}));return;}
   if(req.method!=='POST'||req.url!=='/run-stream'){res.writeHead(404).end();return;}
   let body='';for await(const chunk of req)body+=chunk;
   assert.equal(JSON.parse(body).task,'Test approved workflow');
@@ -56,6 +57,9 @@ test('approved task executes against mocked AI and cannot execute twice',async()
   let ready=false;
   for(let i=0;i<40;i++){if(child.exitCode!==null)break;try{const response=await fetch(base+'/health',{headers});if(response.ok){ready=true;break}}catch{}await delay(150)}
   assert.ok(ready,'API server should start');
+  const health=await fetch(base+'/ai-health',{headers});
+  assert.equal(health.status,200);
+  assert.deepEqual((await health.json()).agents,['Planner','Researcher','Developer','Reviewer']);
   const created=await fetch(base+'/tasks',{method:'POST',headers,body:JSON.stringify({task:'Test approved workflow'})});
   assert.equal(created.status,201);
   const task=await created.json();
