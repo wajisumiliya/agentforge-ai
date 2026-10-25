@@ -119,10 +119,10 @@ async function executeApprovedTask(t){
         if(db)await db.query("UPDATE agentforge_tasks SET trace=$2,updated_at=now() WHERE id=$1 AND status='Running'",[t.id,JSON.stringify(t.trace)]);
         else await save(t);
       }
-      if(event.type==='complete'){
+      else if(event.type==='complete'){
         if(typeof event.result!=='string'||!event.result.trim()||!Array.isArray(event.trace)||event.trace.length!==4||event.trace.some((step,index)=>!step||step.agent!==agentSequence[index]||typeof step.output!=='string')||t.trace.length!==4||t.trace.some((step,index)=>step.agent!==event.trace[index].agent||step.output!==event.trace[index].output))throw new Error('Invalid AI response');
         t.result=event.result;t.trace=event.trace;completed=true;
-      }
+      }else if(event.type!=='progress')throw new Error('Unknown AI stream event');
     }
     while(true){
       const {done,value}=await reader.read();
