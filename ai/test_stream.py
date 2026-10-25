@@ -59,6 +59,17 @@ class StreamTest(unittest.IsolatedAsyncioTestCase):
             result = await main.ollama_health()
         self.assertEqual(result["status"], "unavailable")
 
+    async def test_provider_health_does_not_expose_secret(self):
+        with patch.dict(main.os.environ, {'CLOUD_AI_API_KEY': 'sensitive-test-token', 'CLOUD_AI_MODEL': 'test-model'}):
+            info = main.provider_health()
+        self.assertEqual(info['cloud'], 'configured')
+        self.assertEqual(info['model'], 'test-model')
+        self.assertNotIn('sensitive-test-token', json.dumps(info))
+
+    async def test_provider_health_unconfigured(self):
+        with patch.dict(main.os.environ, {}, clear=True):
+            self.assertEqual(main.provider_health()['cloud'], 'not_configured')
+
     async def test_online_mode_uses_cloud_only(self):
         with patch.object(main, 'cloud_ask', AsyncMock(return_value='Cloud answer')) as cloud, patch.object(main.httpx, 'AsyncClient') as local:
             token = main.mode_context.set('online')
