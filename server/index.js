@@ -73,6 +73,17 @@ async function list() {
 }
 function wrap(fn){return (req,res)=>Promise.resolve(fn(req,res)).catch(e=>{console.error(e);res.status(500).json({error:'Internal server error'});});}
 app.get('/api/health',(_,res)=>res.json({status:'ok',persistence:db?'postgresql':'memory'}));
+app.get('/api/ai-health',wrap(async(_,res)=>{
+  try{
+    const response=await fetch((process.env.AI_SERVICE_URL||'http://127.0.0.1:8000')+'/health',{signal:AbortSignal.timeout(3000)});
+    if(!response.ok)return res.status(503).json({status:'unavailable',error:'AI service health check failed'});
+    const data=await response.json();
+    if(data?.status!=='ok')return res.status(503).json({status:'unavailable',error:'AI service is not ready'});
+    res.json({status:'ok',agents:Array.isArray(data.agents)?data.agents:[]});
+  }catch{
+    res.status(503).json({status:'unavailable',error:'AI service is not reachable'});
+  }
+}));
 app.get('/api/tasks',wrap(async(_,res)=>res.json({tasks:await list()})));
 app.post('/api/tasks',wrap(async(req,res)=>{
   const task=req.body?.task;
