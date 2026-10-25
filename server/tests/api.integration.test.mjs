@@ -16,6 +16,7 @@ test('API authentication, queue and reject lifecycle',async()=>{
   assert.ok(ready,'server should start');
   const unauth=await fetch(base+'/tasks');assert.equal(unauth.status,401);
   const unauthorizedAiHealth=await fetch(base+'/ai-health');assert.equal(unauthorizedAiHealth.status,401);
+  const unauthorizedModelCheck=await fetch(base+'/ollama-health');assert.equal(unauthorizedModelCheck.status,401);
   const aiHealth=await fetch(base+'/ai-health',{headers:{'X-AgentForge-Key':key}});
   assert.equal(aiHealth.status,503,'missing local AI service must report unavailable');
   assert.equal((await aiHealth.json()).status,'unavailable');
@@ -29,7 +30,7 @@ test('API authentication, queue and reject lifecycle',async()=>{
   const rejected=await fetch(base+'/tasks/'+task.id+'/reject',{method:'POST',headers});assert.equal(rejected.status,200);assert.equal((await rejected.json()).status,'Rejected');
   const repeated=await fetch(base+'/tasks/'+task.id+'/reject',{method:'POST',headers});assert.equal(repeated.status,409);
   const invalidId=await fetch(base+'/tasks/not-a-uuid/reject',{method:'POST',headers});assert.equal(invalidId.status,404);
-  for(let i=0;i<8;i++){const attempt=await fetch(base+'/tasks');assert.equal(attempt.status,401)}
+  for(let i=0;i<7;i++){const attempt=await fetch(base+'/tasks');assert.equal(attempt.status,401)}
   const limited=await fetch(base+'/tasks');assert.equal(limited.status,429);
   const blocked=await fetch(base+'/tasks',{headers});assert.equal(blocked.status,429);
  }finally{child.kill();await delay(100)}
