@@ -19,6 +19,7 @@ const maxConcurrentTasks = 2;
 const maxPendingTasks = 100;
 const maxMemoryTasks = 1000;
 const maxStreamLineBytes = 1024 * 1024;
+const validModes = new Set(['offline','online','hybrid']);
 const agentSequence = ['Planner','Researcher','Developer','Reviewer'];
 const taskIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const apiKey = process.env.AGENTFORGE_API_KEY;
@@ -51,9 +52,10 @@ if(db) {
   await db.query(`CREATE TABLE IF NOT EXISTS agentforge_tasks (
     id UUID PRIMARY KEY, task TEXT NOT NULL, status TEXT NOT NULL,
     result TEXT, trace JSONB, error TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    mode TEXT NOT NULL DEFAULT 'offline', updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`);
 }
+if(db) await db.query("ALTER TABLE agentforge_tasks ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'offline'");
 if(db && process.env.AGENTFORGE_SINGLE_INSTANCE==='true') {
   await db.query("UPDATE agentforge_tasks SET status='Failed',error='Interrupted by server restart',updated_at=now() WHERE status='Running'");
 }
@@ -68,9 +70,9 @@ async function save(t) {
     }
     return;
   }
-  await db.query(`INSERT INTO agentforge_tasks (id,task,status,result,trace,error) VALUES ($1,$2,$3,$4,$5,$6)
-  ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,result=EXCLUDED.result,trace=EXCLUDED.trace,error=EXCLUDED.error,updated_at=now()`,
-  [t.id,t.task,t.status,t.result||null,JSON.stringify(t.trace||[]),t.error||null]);
+  await db.query(`INSERT INTO agentforge_tasks (id,task,status,result,trace,error,mode) VALUES ($1,$2,$3,$4,$5,$6,$7)
+  ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,result=EXCLUDED.result,trace=EXCLUDED.trace,error=EXCLUDED.error,mode=EXCLUDED.mode,updated_at=now()`,
+  [t.id,t.task,t.status,t.result||null,JSON.stringify(t.trace||[]),t.error||null,t.mode||'offline']);
 }
 async function get(id) {
   if(!taskIdPattern.test(id))return undefined;
@@ -111,7 +113,9 @@ app.post('/api/tasks',wrap(async(req,res)=>{
     ? Number((await db.query("SELECT count(*)::int AS n FROM agentforge_tasks WHERE status='Pending approval'")).rows[0].n)
     : [...memory.values()].filter(t=>t.status==='Pending approval').length;
   if(pending>=maxPendingTasks)return res.status(429).json({error:'Pending task queue is full'});
-  const t={id:randomUUID(),task:task.trim(),status:'Pending approval',trace:[]};
+  const mode=req.body?.mode??'offline';
+  if(!validModes.has(mode))return res.status(400).json({error:'Invalid AI mode'});
+  const t={id:randomUUID(),task:task.trim(),mode,status:'Pending approval',trace:[]};
   await save(t);res.status(201).json(t);
 }));
 app.post('/api/tasks/:id/reject',wrap(async(req,res)=>{
@@ -130,7 +134,7 @@ async function executeApprovedTask(t){
   try{
     const response=await fetch((process.env.AI_SERVICE_URL||'http://127.0.0.1:8000')+'/run-stream',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({task:t.task}),signal:AbortSignal.timeout(480000)
+      body:JSON.stringify({task:t.task,mode:t.mode||'offline'}),signal:AbortSignal.timeout(480000)
     });
     if(!response.ok||!response.body)throw new Error('AI service returned '+response.status);
     const reader=response.body.getReader();
