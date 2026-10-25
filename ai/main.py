@@ -64,6 +64,21 @@ graph = builder.compile()
 def health():
     return {"status": "ok", "agents": ["Planner", "Researcher", "Developer", "Reviewer"]}
 
+@app.get("/ollama-health")
+async def ollama_health():
+    url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+    model = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
+    try:
+        async with httpx.AsyncClient(timeout=3) as client:
+            response = await client.get(f"{url}/api/tags")
+            response.raise_for_status()
+            models = response.json().get("models", [])
+            installed = any(isinstance(item, dict) and item.get("name") == model for item in models)
+            return {"status": "ready" if installed else "model_missing", "model": model}
+    except (httpx.HTTPError, ValueError, TypeError):
+        return {"status": "unavailable", "model": model}
+
+
 @app.post("/run")
 async def run(task: Task):
     try:
