@@ -37,9 +37,11 @@ test('approved task executes against mocked AI and cannot execute twice',async()
   if(req.method!=='POST'||req.url!=='/run-stream'){res.writeHead(404).end();return;}
   let body='';for await(const chunk of req)body+=chunk;
   assert.equal(JSON.parse(body).task,'Test approved workflow');
-  res.setHeader('Content-Type','application/json');
+  res.setHeader('Content-Type','application/x-ndjson');
   const trace=[{agent:'Planner',output:'Plan ready'},{agent:'Reviewer',output:'Reviewed plan'}];
-  res.end([JSON.stringify({type:'progress',agent:'Planner',trace:trace.slice(0,1)}),JSON.stringify({type:'progress',agent:'Reviewer',trace}),JSON.stringify({type:'complete',result:'Reviewed plan',trace})].join(String.fromCharCode(10))+String.fromCharCode(10));
+  res.write(JSON.stringify({type:'progress',agent:'Planner',trace:trace.slice(0,1)})+String.fromCharCode(10));
+  await delay(300);
+  res.end([JSON.stringify({type:'progress',agent:'Reviewer',trace}),JSON.stringify({type:'complete',result:'Reviewed plan',trace})].join(String.fromCharCode(10))+String.fromCharCode(10));
  });
  await new Promise(resolve=>mock.listen(0,'127.0.0.1',resolve));
  const aiPort=mock.address().port;
@@ -59,12 +61,15 @@ test('approved task executes against mocked AI and cannot execute twice',async()
   const accepted=await approved.json();
   assert.equal(accepted.status,'Running');
   let output;
+  let sawProgress=false;
   for(let i=0;i<50;i++){
     const response=await fetch(base+'/tasks',{headers});
     output=(await response.json()).tasks.find(x=>x.id===task.id);
+    if(output?.status==='Running'&&output.trace?.length===1)sawProgress=true;
     if(output?.status==='Completed')break;
     await delay(100);
   }
+  assert.equal(sawProgress,true,'intermediate agent progress should be visible');
   assert.equal(output.status,'Completed');assert.equal(output.result,'Reviewed plan');assert.equal(output.trace.length,2);
   const again=await fetch(base+'/tasks/'+task.id+'/approve',{method:'POST',headers});
   assert.equal(again.status,409);
