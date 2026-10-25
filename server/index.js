@@ -94,6 +94,15 @@ app.get('/api/ai-health',wrap(async(_,res)=>{
     res.status(503).json({status:'unavailable',error:'AI service is not reachable'});
   }
 }));
+app.get('/api/ollama-health',wrap(async(_,res)=>{
+  try{
+    const response=await fetch((process.env.AI_SERVICE_URL||'http://127.0.0.1:8000')+'/ollama-health',{signal:AbortSignal.timeout(5000)});
+    if(!response.ok)return res.status(503).json({status:'unavailable'});
+    const data=await response.json();
+    if(!['ready','model_missing','unavailable'].includes(data?.status)||typeof data.model!=='string')return res.status(503).json({status:'unavailable'});
+    res.status(data.status==='ready'?200:503).json({status:data.status,model:data.model});
+  }catch{res.status(503).json({status:'unavailable'});}
+}));
 app.get('/api/tasks',wrap(async(_,res)=>res.json({tasks:await list()})));
 app.post('/api/tasks',wrap(async(req,res)=>{
   const task=req.body?.task;
