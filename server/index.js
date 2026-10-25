@@ -126,12 +126,12 @@ async function executeApprovedTask(t){
       const {done,value}=await reader.read();
       if(done)break;
       buffer+=decoder.decode(value,{stream:true});
-      if(Buffer.byteLength(buffer,'utf8')>maxStreamLineBytes)throw new Error('AI progress event too large');
       let index;
       while((index=buffer.indexOf(String.fromCharCode(10)))>=0){
         const line=buffer.slice(0,index);buffer=buffer.slice(index+1);
         await consume(line);
       }
+      if(Buffer.byteLength(buffer,'utf8')>maxStreamLineBytes)throw new Error('AI progress event too large');
     }
     buffer+=decoder.decode();
     if(buffer.trim())await consume(buffer);
