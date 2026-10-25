@@ -22,3 +22,44 @@ The local API throttles ten invalid key attempts per one-minute window and limit
 
 ## Interrupted tasks
 When using PostgreSQL with exactly one Node API instance, set `AGENTFORGE_SINGLE_INSTANCE=true` to mark previously Running tasks Failed on startup. Do not enable this with multiple API instances: one instance could incorrectly mark another instance's active tasks as failed. In-memory tasks are lost when the process restarts. Approved requests return HTTP 202 and continue asynchronously within the Node process; this is not a durable worker queue.
+
+## Windows end-to-end smoke test
+
+From PowerShell, start Ollama and verify that the model is installed:
+
+```powershell
+ollama list
+ollama pull qwen2.5:3b
+```
+
+Start the three processes from the setup section in separate terminals. In a fourth terminal, verify Python AI health:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+```
+
+Submit a local AI streaming request directly to the Python service (this bypasses the Node approval queue):
+
+```powershell
+$body = @{ task = "Write a short project plan for a book inventory app" } | ConvertTo-Json
+Invoke-WebRequest -Uri http://127.0.0.1:8000/run-stream -Method Post -ContentType 'application/json' -Body $body
+```
+
+Expected: four progress events (Planner, Researcher, Developer, Reviewer), followed by one complete event. Then use the browser to connect with the same Node API key, queue a task, approve it, and observe the progress bar. On a CPU-only machine, inference can be slow. If Ollama is unavailable, the task should show Failed instead of Completed.
+
+To run automated tests locally:
+
+```powershell
+npm install
+npm run build
+Push-Location server
+npm install
+Pop-Location
+node --test server/tests/*.test.mjs
+Push-Location ai
+python -m pip install -r requirements.txt
+python -m unittest discover -p 'test_*.py' -v
+Pop-Location
+```
+
+Do not expose these development endpoints to the public internet.
