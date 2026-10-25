@@ -145,3 +145,43 @@ test('oversized streamed AI response fails safely',async()=>{
   await new Promise(resolve=>mock.close(resolve));
  }
 });
+
+test('multiple valid progress events in one large chunk are accepted',async()=>{
+ const key='integration-test-secret-key-at-least-32-characters';
+ const mock=createServer(async(req,res)=>{
+  for await(const _ of req){}
+  res.setHeader('Content-Type','application/x-ndjson');
+  const trace=[];
+  const lines=[];
+  for(const agent of ['Planner','Researcher','Developer','Reviewer']){
+   trace.push({agent,output:'x'.repeat(280000)});
+   lines.push(JSON.stringify({type:'progress',agent,trace:trace.slice(-1)}));
+  }
+  lines.push(JSON.stringify({type:'complete',result:'Done',trace:[{agent:'Reviewer',output:'Done'}]}));
+  res.end(lines.join(String.fromCharCode(10))+String.fromCharCode(10));
+ });
+ await new Promise(resolve=>mock.listen(0,'127.0.0.1',resolve));
+ const port=43000+Math.floor(Math.random()*1000);
+ const child=spawn(process.execPath,['index.js'],{cwd:fileURLToPath(new URL('../',import.meta.url)),env:{...process.env,AGENTFORGE_API_KEY:key,PORT:String(port),DATABASE_URL:'',AI_SERVICE_URL:'http://127.0.0.1:'+mock.address().port},stdio:'ignore'});
+ const base='http://127.0.0.1:'+port+'/api';
+ const headers={'X-AgentForge-Key':key,'Content-Type':'application/json'};
+ try{
+  let ready=false;
+  for(let i=0;i<40;i++){if(child.exitCode!==null)break;try{if((await fetch(base+'/health',{headers})).ok){ready=true;break}}catch{}await delay(150)}
+  assert.ok(ready);
+  const created=await fetch(base+'/tasks',{method:'POST',headers,body:JSON.stringify({task:'Test large valid stream'})});
+  const task=await created.json();
+  assert.equal((await fetch(base+'/tasks/'+task.id+'/approve',{method:'POST',headers})).status,202);
+  let latest;
+  for(let i=0;i<60;i++){
+   latest=(await (await fetch(base+'/tasks',{headers})).json()).tasks.find(x=>x.id===task.id);
+   if(latest?.status!=='Running')break;
+   await delay(100);
+  }
+  assert.equal(latest.status,'Completed');
+  assert.equal(latest.result,'Done');
+ }finally{
+  child.kill();
+  await new Promise(resolve=>mock.close(resolve));
+ }
+});
