@@ -139,7 +139,7 @@ async function executeApprovedTask(t){
     if(buffer.trim())await consume(buffer);
     if(!completed)throw new Error('AI stream ended without completion');
     t.status='Completed';
-  }catch(e){t.status='Failed';t.error=e instanceof Error?e.message:'Unknown AI error'}
+  }catch(e){t.status='Failed';t.result=null;t.error=e instanceof Error?e.message:'Unknown AI error'}
   try{
     if(db)await db.query("UPDATE agentforge_tasks SET status=$2,result=$3,trace=$4,error=$5,updated_at=now() WHERE id=$1 AND status='Running'",[t.id,t.status,t.result||null,JSON.stringify(t.trace||[]),t.error||null]);
     else await save(t);
