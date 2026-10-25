@@ -8,8 +8,10 @@ export function extractProject(text:string):GeneratedFile[]{
   if(name&&!files.some(f=>f.name===name))files.push({name,content:match[2].trim()});
  }
  if(!files.some(f=>f.name==='index.html')){
-  const start=text.search(/<!doctype html|<html[\\s>]/i);
-  if(start>=0){const tail=text.slice(start);const end=tail.search(/<\\/html\\s*>/i);if(end>=0)files.unshift({name:'index.html',content:tail.slice(0,end+tail.slice(end).indexOf('>')+1)});}
+  const start=text.toLowerCase().indexOf('<!doctype html');
+  const alt=text.toLowerCase().indexOf('<html');
+  const pos=start>=0?start:alt;
+  if(pos>=0){const tail=text.slice(pos);const closing=tail.toLowerCase().indexOf('</html>');if(closing>=0)files.unshift({name:'index.html',content:tail.slice(0,closing+7)});}
  }
  return files;
 }
