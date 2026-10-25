@@ -17,6 +17,7 @@ test('API authentication, queue and reject lifecycle',async()=>{
   const unauth=await fetch(base+'/tasks');assert.equal(unauth.status,401);
   const unauthorizedAiHealth=await fetch(base+'/ai-health');assert.equal(unauthorizedAiHealth.status,401);
   const unauthorizedModelCheck=await fetch(base+'/ollama-health');assert.equal(unauthorizedModelCheck.status,401);
+  const unauthorizedCloudCheck=await fetch(base+'/provider-health');assert.equal(unauthorizedCloudCheck.status,401);
   const aiHealth=await fetch(base+'/ai-health',{headers:{'X-AgentForge-Key':key}});
   assert.equal(aiHealth.status,503,'missing local AI service must report unavailable');
   assert.equal((await aiHealth.json()).status,'unavailable');
@@ -30,7 +31,7 @@ test('API authentication, queue and reject lifecycle',async()=>{
   const rejected=await fetch(base+'/tasks/'+task.id+'/reject',{method:'POST',headers});assert.equal(rejected.status,200);assert.equal((await rejected.json()).status,'Rejected');
   const repeated=await fetch(base+'/tasks/'+task.id+'/reject',{method:'POST',headers});assert.equal(repeated.status,409);
   const invalidId=await fetch(base+'/tasks/not-a-uuid/reject',{method:'POST',headers});assert.equal(invalidId.status,404);
-  for(let i=0;i<7;i++){const attempt=await fetch(base+'/tasks');assert.equal(attempt.status,401)}
+  for(let i=0;i<6;i++){const attempt=await fetch(base+'/tasks');assert.equal(attempt.status,401)}
   const limited=await fetch(base+'/tasks');assert.equal(limited.status,429);
   const blocked=await fetch(base+'/tasks',{headers});assert.equal(blocked.status,429);
  }finally{child.kill();await delay(100)}
@@ -41,6 +42,7 @@ test('approved task executes against mocked AI and cannot execute twice',async()
  const mock=createServer(async(req,res)=>{
   if(req.method==='GET'&&req.url==='/health'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({status:'ok',agents:['Planner','Researcher','Developer','Reviewer']}));return;}
   if(req.method==='GET'&&req.url==='/ollama-health'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({status:'ready',model:'qwen2.5:3b'}));return;}
+  if(req.method==='GET'&&req.url==='/provider-health'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({cloud:'configured',model:'test-model'}));return;}
   if(req.method!=='POST'||req.url!=='/run-stream'){res.writeHead(404).end();return;}
   let body='';for await(const chunk of req)body+=chunk;
   assert.equal(JSON.parse(body).task,'Test approved workflow');
@@ -66,6 +68,9 @@ test('approved task executes against mocked AI and cannot execute twice',async()
   const modelCheck=await fetch(base+'/ollama-health',{headers});
   assert.equal(modelCheck.status,200);
   assert.equal((await modelCheck.json()).status,'ready');
+  const provider=await fetch(base+'/provider-health',{headers});
+  assert.equal(provider.status,200);
+  assert.deepEqual(await provider.json(),{cloud:'configured',model:'test-model'});
   const created=await fetch(base+'/tasks',{method:'POST',headers,body:JSON.stringify({task:'Test approved workflow'})});
   assert.equal(created.status,201);
   const task=await created.json();
