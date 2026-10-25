@@ -75,12 +75,12 @@ function wrap(fn){return (req,res)=>Promise.resolve(fn(req,res)).catch(e=>{conso
 app.get('/api/health',(_,res)=>res.json({status:'ok',persistence:db?'postgresql':'memory'}));
 app.get('/api/tasks',wrap(async(_,res)=>res.json({tasks:await list()})));
 app.post('/api/tasks',wrap(async(req,res)=>{
+  const task=req.body?.task;
+  if(typeof task!=='string'||!task.trim()||task.length>4000)return res.status(400).json({error:'Task must be 1–4000 characters'});
   const pending=db
     ? Number((await db.query("SELECT count(*)::int AS n FROM agentforge_tasks WHERE status='Pending approval'")).rows[0].n)
     : [...memory.values()].filter(t=>t.status==='Pending approval').length;
   if(pending>=maxPendingTasks)return res.status(429).json({error:'Pending task queue is full'});
-  const task=req.body?.task;
-  if(typeof task!=='string'||!task.trim()||task.length>4000)return res.status(400).json({error:'Task must be 1–4000 characters'});
   const t={id:randomUUID(),task:task.trim(),status:'Pending approval',trace:[]};
   await save(t);res.status(201).json(t);
 }));
