@@ -2,3 +2,5 @@
 .key-input{display:block;width:100%;padding:13px 16px;border:1px solid #293850;background:#0a1220;color:#e8edf7;border-radius:10px;font:inherit}.key-input:focus{outline:1px solid #8b85ff}.api-error{padding:12px;border:1px solid #9f3749;border-radius:8px;color:#fda4af;margin-bottom:20px}.approval-actions{display:flex;gap:12px;margin:12px 0}.agent-step{border-left:2px solid #766cf0;padding:10px 15px;margin:10px 0}details{margin-top:14px}summary{cursor:pointer;color:#bdbaff}
 
 .agent-progress{height:9px;background:rgba(125,145,180,.18);border-radius:99px;overflow:hidden;margin:12px 0 8px}.agent-progress>div{height:100%;background:linear-gradient(90deg,#4f8cff,#6ad9c0);border-radius:inherit;transition:width .3s ease}
+
+.pill .dot.offline{background:#fb7185;box-shadow:none}.pill .dot.online{background:#34d399}
