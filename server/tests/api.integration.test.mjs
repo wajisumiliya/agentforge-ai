@@ -38,7 +38,7 @@ test('approved task executes against mocked AI and cannot execute twice',async()
   let body='';for await(const chunk of req)body+=chunk;
   assert.equal(JSON.parse(body).task,'Test approved workflow');
   res.setHeader('Content-Type','application/x-ndjson');
-  const trace=[{agent:'Planner',output:'Plan ready'},{agent:'Reviewer',output:'Reviewed plan'}];
+  const trace=[{agent:'Planner',output:'Plan ready'},{agent:'Researcher',output:'Research ready'},{agent:'Developer',output:'Draft ready'},{agent:'Reviewer',output:'Reviewed plan'}];
   res.write(JSON.stringify({type:'progress',agent:'Planner',trace:trace.slice(0,1)})+String.fromCharCode(10));
   await delay(300);
   res.end([JSON.stringify({type:'progress',agent:'Reviewer',trace}),JSON.stringify({type:'complete',result:'Reviewed plan',trace})].join(String.fromCharCode(10))+String.fromCharCode(10));
@@ -70,7 +70,7 @@ test('approved task executes against mocked AI and cannot execute twice',async()
     await delay(100);
   }
   assert.equal(sawProgress,true,'intermediate agent progress should be visible');
-  assert.equal(output.status,'Completed');assert.equal(output.result,'Reviewed plan');assert.equal(output.trace.length,2);
+  assert.equal(output.status,'Completed');assert.equal(output.result,'Reviewed plan');assert.equal(output.trace.length,4);
   const again=await fetch(base+'/tasks/'+task.id+'/approve',{method:'POST',headers});
   assert.equal(again.status,409);
  }finally{
@@ -157,7 +157,7 @@ test('multiple valid progress events in one large chunk are accepted',async()=>{
    trace.push({agent,output:'x'.repeat(280000)});
    lines.push(JSON.stringify({type:'progress',agent,trace:trace.slice(-1)}));
   }
-  lines.push(JSON.stringify({type:'complete',result:'Done',trace:[{agent:'Reviewer',output:'Done'}]}));
+  lines.push(JSON.stringify({type:'complete',result:'Done',trace:[{agent:'Planner',output:'Plan'},{agent:'Researcher',output:'Research'},{agent:'Developer',output:'Draft'},{agent:'Reviewer',output:'Done'}]}));
   res.end(lines.join(String.fromCharCode(10))+String.fromCharCode(10));
  });
  await new Promise(resolve=>mock.listen(0,'127.0.0.1',resolve));
