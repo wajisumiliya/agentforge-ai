@@ -30,8 +30,9 @@ class StreamTest(unittest.IsolatedAsyncioTestCase):
         mock_response.json.return_value = {"response": "  "}
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
-        mock_context = AsyncMock()
-        mock_context.__aenter__.return_value = mock_client
+        mock_context = MagicMock()
+        mock_context.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_context.__aexit__ = AsyncMock(return_value=False)
         with patch.object(main.httpx, "AsyncClient", return_value=mock_context):
             with self.assertRaises(ValueError):
                 await main.ask("Planner", "Create a plan")
