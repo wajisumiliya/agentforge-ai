@@ -14,6 +14,13 @@ jobs:
           node-version: '22'
       - run: npm install
       - run: npm run build
+      - name: Upload production frontend build
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentforge-frontend-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
       - run: node --check server/index.js
       - run: cd server && npm install
       - run: node --test server/tests/*.test.mjs
@@ -43,3 +50,11 @@ jobs:
       - name: Full Windows build and tests
         shell: pwsh
         run: ./build-check.ps1
+      - name: Upload Windows frontend build
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentforge-windows-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
