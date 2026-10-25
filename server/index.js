@@ -114,7 +114,7 @@ async function executeApprovedTask(t){
       if(completed)throw new Error('Unexpected AI event after completion');
       if(event.type==='error')throw new Error(event.error||'AI execution failed');
       if(event.type==='progress'){
-        if(!Array.isArray(event.trace)||event.trace.length!==t.trace.length+1||event.trace.length>4||event.trace.some((step,index)=>!step||step.agent!==agentSequence[index]||typeof step.output!=='string')||t.trace.some((step,index)=>step.agent!==event.trace[index].agent||step.output!==event.trace[index].output))throw new Error('Invalid AI progress event');
+        if(!Array.isArray(event.trace)||event.trace.length!==t.trace.length+1||event.trace.length>4||event.agent!==agentSequence[event.trace.length-1]||event.trace.some((step,index)=>!step||step.agent!==agentSequence[index]||typeof step.output!=='string')||t.trace.some((step,index)=>step.agent!==event.trace[index].agent||step.output!==event.trace[index].output))throw new Error('Invalid AI progress event');
         t.trace=event.trace;
         if(db)await db.query("UPDATE agentforge_tasks SET trace=$2,updated_at=now() WHERE id=$1 AND status='Running'",[t.id,JSON.stringify(t.trace)]);
         else await save(t);
