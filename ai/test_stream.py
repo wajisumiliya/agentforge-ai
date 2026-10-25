@@ -59,6 +59,47 @@ class StreamTest(unittest.IsolatedAsyncioTestCase):
             result = await main.ollama_health()
         self.assertEqual(result["status"], "unavailable")
 
+    async def test_online_mode_uses_cloud_only(self):
+        with patch.object(main, 'cloud_ask', AsyncMock(return_value='Cloud answer')) as cloud, patch.object(main.httpx, 'AsyncClient') as local:
+            token = main.mode_context.set('online')
+            try:
+                self.assertEqual(await main.ask('role', 'prompt'), 'Cloud answer')
+            finally:
+                main.mode_context.reset(token)
+            cloud.assert_awaited_once()
+            local.assert_not_called()
+
+    async def test_hybrid_falls_back_to_local(self):
+        response = MagicMock()
+        response.json.return_value = {'response': 'Local answer'}
+        client = AsyncMock()
+        client.post.return_value = response
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=client)
+        context.__aexit__ = AsyncMock(return_value=False)
+        with patch.dict(main.os.environ, {'CLOUD_AI_API_KEY': 'test-key'}), patch.object(main, 'cloud_ask', AsyncMock(side_effect=main.httpx.ConnectError('offline'))), patch.object(main.httpx, 'AsyncClient', return_value=context):
+            token = main.mode_context.set('hybrid')
+            try:
+                self.assertEqual(await main.ask('role', 'prompt'), 'Local answer')
+            finally:
+                main.mode_context.reset(token)
+
+    async def test_offline_never_calls_cloud(self):
+        response = MagicMock()
+        response.json.return_value = {'response': 'Local answer'}
+        client = AsyncMock()
+        client.post.return_value = response
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=client)
+        context.__aexit__ = AsyncMock(return_value=False)
+        with patch.object(main, 'cloud_ask', AsyncMock()) as cloud, patch.object(main.httpx, 'AsyncClient', return_value=context):
+            token = main.mode_context.set('offline')
+            try:
+                self.assertEqual(await main.ask('role', 'prompt'), 'Local answer')
+            finally:
+                main.mode_context.reset(token)
+            cloud.assert_not_awaited()
+
     async def test_empty_ollama_response_is_rejected(self):
         mock_response = MagicMock()
         mock_response.json.return_value = {"response": "  "}
