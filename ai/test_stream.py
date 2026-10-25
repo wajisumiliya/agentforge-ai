@@ -59,6 +59,43 @@ class StreamTest(unittest.IsolatedAsyncioTestCase):
             result = await main.ollama_health()
         self.assertEqual(result["status"], "unavailable")
 
+    async def test_cloud_request_uses_chat_completions(self):
+        response = MagicMock()
+        response.json.return_value = {'choices': [{'message': {'content': 'Cloud result'}}]}
+        client = AsyncMock()
+        client.post.return_value = response
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=client)
+        context.__aexit__ = AsyncMock(return_value=False)
+        with patch.dict(main.os.environ, {'CLOUD_AI_API_KEY': 'private-test-key', 'CLOUD_AI_BASE_URL': 'https://example.invalid/v1', 'CLOUD_AI_MODEL': 'test-model'}), patch.object(main.httpx, 'AsyncClient', return_value=context):
+            result = await main.cloud_ask('system role', 'user task')
+        self.assertEqual(result, 'Cloud result')
+        args, kwargs = client.post.call_args
+        self.assertEqual(args[0], 'https://example.invalid/v1/chat/completions')
+        self.assertEqual(kwargs['json']['model'], 'test-model')
+        self.assertEqual(kwargs['json']['messages'][1]['content'], 'user task')
+        self.assertEqual(kwargs['headers']['Authorization'], 'Bearer private-test-key')
+
+    async def test_online_mode_without_key_fails_without_local_fallback(self):
+        with patch.dict(main.os.environ, {}, clear=True), patch.object(main.httpx, 'AsyncClient') as client:
+            token = main.mode_context.set('online')
+            try:
+                with self.assertRaisesRegex(ValueError, 'not configured'):
+                    await main.ask('role', 'prompt')
+            finally:
+                main.mode_context.reset(token)
+            client.assert_not_called()
+
+    async def test_hybrid_uses_cloud_when_available(self):
+        with patch.dict(main.os.environ, {'CLOUD_AI_API_KEY': 'test-key'}), patch.object(main, 'cloud_ask', AsyncMock(return_value='Cloud result')) as cloud, patch.object(main.httpx, 'AsyncClient') as local:
+            token = main.mode_context.set('hybrid')
+            try:
+                self.assertEqual(await main.ask('role', 'prompt'), 'Cloud result')
+            finally:
+                main.mode_context.reset(token)
+            cloud.assert_awaited_once()
+            local.assert_not_called()
+
     async def test_provider_health_does_not_expose_secret(self):
         with patch.dict(main.os.environ, {'CLOUD_AI_API_KEY': 'sensitive-test-token', 'CLOUD_AI_MODEL': 'test-model'}):
             info = main.provider_health()
