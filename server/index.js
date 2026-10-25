@@ -18,6 +18,7 @@ const maxFailures = 10;
 const maxConcurrentTasks = 2;
 const maxPendingTasks = 100;
 const maxStreamLineBytes = 1024 * 1024;
+const agentSequence = ['Planner','Researcher','Developer','Reviewer'];
 const taskIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const apiKey = process.env.AGENTFORGE_API_KEY;
 if(!apiKey || apiKey.length < 32) throw new Error('Set AGENTFORGE_API_KEY to a random value of at least 32 characters');
@@ -113,13 +114,13 @@ async function executeApprovedTask(t){
       if(completed)throw new Error('Unexpected AI event after completion');
       if(event.type==='error')throw new Error(event.error||'AI execution failed');
       if(event.type==='progress'){
-        if(!Array.isArray(event.trace)||event.trace.length>4||event.trace.some(step=>!step||typeof step.agent!=='string'||typeof step.output!=='string'))throw new Error('Invalid AI progress event');
+        if(!Array.isArray(event.trace)||event.trace.length>4||event.trace.some((step,index)=>!step||step.agent!==agentSequence[index]||typeof step.output!=='string'))throw new Error('Invalid AI progress event');
         t.trace=event.trace;
         if(db)await db.query("UPDATE agentforge_tasks SET trace=$2,updated_at=now() WHERE id=$1 AND status='Running'",[t.id,JSON.stringify(t.trace)]);
         else await save(t);
       }
       if(event.type==='complete'){
-        if(typeof event.result!=='string'||!event.result.trim()||!Array.isArray(event.trace)||event.trace.length!==4||event.trace.some(step=>!step||typeof step.agent!=='string'||typeof step.output!=='string'))throw new Error('Invalid AI response');
+        if(typeof event.result!=='string'||!event.result.trim()||!Array.isArray(event.trace)||event.trace.length!==4||event.trace.some((step,index)=>!step||step.agent!==agentSequence[index]||typeof step.output!=='string'))throw new Error('Invalid AI response');
         t.result=event.result;t.trace=event.trace;completed=true;
       }
     }
