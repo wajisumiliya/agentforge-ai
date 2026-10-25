@@ -8,7 +8,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 test('API authentication, queue and reject lifecycle',async()=>{
  const key='integration-test-secret-key-at-least-32-characters';
  const port=39000+Math.floor(Math.random()*1000);
- const child=spawn(process.execPath,['index.js'],{cwd:fileURLToPath(new URL('../',import.meta.url)),env:{...process.env,AGENTFORGE_API_KEY:key,PORT:String(port),DATABASE_URL:''},stdio:'ignore'});
+ const child=spawn(process.execPath,['index.js'],{cwd:fileURLToPath(new URL('../',import.meta.url)),env:{...process.env,AGENTFORGE_API_KEY:key,PORT:String(port),DATABASE_URL:'',AI_SERVICE_URL:'http://127.0.0.1:1'},stdio:'ignore'});
  const base='http://127.0.0.1:'+port+'/api';
  try{
   let ready=false;
