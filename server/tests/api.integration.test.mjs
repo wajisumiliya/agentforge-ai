@@ -251,3 +251,45 @@ test('incomplete AI completion cannot be marked successful',async()=>{
   await new Promise(resolve=>mock.close(resolve));
  }
 });
+
+test('trailing event after completion fails and clears provisional result',async()=>{
+ const key='integration-test-secret-key-at-least-32-characters';
+ const mock=createServer(async(req,res)=>{
+  for await(const _ of req){}
+  res.setHeader('Content-Type','application/x-ndjson');
+  const trace=[];
+  const lines=[];
+  for(const agent of ['Planner','Researcher','Developer','Reviewer']){
+   trace.push({agent,output:agent+' finished'});
+   lines.push(JSON.stringify({type:'progress',agent,trace:trace.slice()}));
+  }
+  lines.push(JSON.stringify({type:'complete',result:'Provisional result',trace}));
+  lines.push(JSON.stringify({type:'unexpected',result:'Extra event'}));
+  res.end(lines.join(String.fromCharCode(10))+String.fromCharCode(10));
+ });
+ await new Promise(resolve=>mock.listen(0,'127.0.0.1',resolve));
+ const port=46000+Math.floor(Math.random()*1000);
+ const child=spawn(process.execPath,['index.js'],{cwd:fileURLToPath(new URL('../',import.meta.url)),env:{...process.env,AGENTFORGE_API_KEY:key,PORT:String(port),DATABASE_URL:'',AI_SERVICE_URL:'http://127.0.0.1:'+mock.address().port},stdio:'ignore'});
+ const base='http://127.0.0.1:'+port+'/api';
+ const headers={'X-AgentForge-Key':key,'Content-Type':'application/json'};
+ try{
+  let ready=false;
+  for(let i=0;i<40;i++){if(child.exitCode!==null)break;try{if((await fetch(base+'/health',{headers})).ok){ready=true;break}}catch{}await delay(150)}
+  assert.ok(ready,'API server should start');
+  const created=await fetch(base+'/tasks',{method:'POST',headers,body:JSON.stringify({task:'Reject events after completion'})});
+  const task=await created.json();
+  assert.equal((await fetch(base+'/tasks/'+task.id+'/approve',{method:'POST',headers})).status,202);
+  let latest;
+  for(let i=0;i<50;i++){
+   latest=(await (await fetch(base+'/tasks',{headers})).json()).tasks.find(x=>x.id===task.id);
+   if(latest?.status==='Failed')break;
+   await delay(100);
+  }
+  assert.equal(latest.status,'Failed');
+  assert.match(latest.error,/Unexpected AI event after completion/);
+  assert.equal(latest.result??null,null,'failed tasks must not retain provisional results');
+ }finally{
+  child.kill();
+  await new Promise(resolve=>mock.close(resolve));
+ }
+});
