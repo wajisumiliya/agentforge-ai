@@ -15,6 +15,29 @@ class StreamTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[-1]["type"], "complete")
         self.assertEqual(len(events[-1]["trace"]), 4)
 
+    async def test_stream_uses_requested_mode_for_all_agents(self):
+        modes = []
+        async def capture_ask(role, instruction):
+            modes.append(main.mode_context.get())
+            return 'Mode checked'
+        with patch.object(main, 'ask', capture_ask):
+            response = await main.run_stream(main.Task(task='Verify hybrid mode', mode='hybrid'))
+            events = [json.loads(part) async for part in response.body_iterator]
+        self.assertEqual(modes, ['hybrid'] * 4)
+        self.assertEqual(events[-1]['type'], 'complete')
+        self.assertEqual(main.mode_context.get(), 'offline')
+
+    async def test_stream_offline_mode_never_calls_cloud(self):
+        modes = []
+        async def capture_ask(role, instruction):
+            modes.append(main.mode_context.get())
+            return 'Offline result'
+        with patch.object(main, 'ask', capture_ask):
+            response = await main.run_stream(main.Task(task='Verify offline mode', mode='offline'))
+            events = [json.loads(part) async for part in response.body_iterator]
+        self.assertEqual(modes, ['offline'] * 4)
+        self.assertEqual(events[-1]['type'], 'complete')
+
     async def test_stream_failure_is_reported(self):
         async def failing_ask(role, instruction):
             raise RuntimeError("Ollama unavailable")
