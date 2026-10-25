@@ -105,6 +105,15 @@ app.get('/api/ollama-health',wrap(async(_,res)=>{
     res.status(data.status==='ready'?200:503).json({status:data.status,model:data.model});
   }catch{res.status(503).json({status:'unavailable'});}
 }));
+app.get('/api/provider-health',wrap(async(_,res)=>{
+  try{
+    const response=await fetch((process.env.AI_SERVICE_URL||'http://127.0.0.1:8000')+'/provider-health',{signal:AbortSignal.timeout(3000)});
+    if(!response.ok)return res.status(503).json({cloud:'unavailable'});
+    const data=await response.json();
+    if(!['configured','not_configured'].includes(data?.cloud))return res.status(503).json({cloud:'unavailable'});
+    res.json({cloud:data.cloud,model:typeof data.model==='string'?data.model:null});
+  }catch{res.status(503).json({cloud:'unavailable'});}
+}));
 app.get('/api/tasks',wrap(async(_,res)=>res.json({tasks:await list()})));
 app.post('/api/tasks',wrap(async(req,res)=>{
   const task=req.body?.task;
